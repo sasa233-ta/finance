@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -c "flask db upgrade && gunicorn run:app --bind 0.0.0.0:5000 --workers 1"
+    environment:
+      FLASK_ENV: development
+      DATABASE_URL: postgres://postgres:postgres@db:5432/appdb
+      SECRET_KEY: dev-secret
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+volumes:
+  db-data:

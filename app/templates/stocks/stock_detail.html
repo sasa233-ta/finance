@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}株詳細{% endblock %}
+{% block content %}
+{% if stock %}
+<h2>{{ stock.name }}（{{ stock.code }}）</h2>
+<ul class="list-group mb-3">
+  <li class="list-group-item"><strong>市場:</strong> {{ stock.market }}</li>
+  <li class="list-group-item"><strong>業種:</strong> {{ stock.sector33 }}</li>
+  <li class="list-group-item"><strong>規模:</strong> {{ stock.scale }}</li>
+  <li class="list-group-item"><strong>上場日:</strong> {{ stock.date }}</li>
+</ul>
+<a href="/stocks/" class="btn btn-secondary">一覧に戻る</a>
+
+<button id="show-ai-score" class="btn btn-primary mt-3">AI評価</button>
+<button id="show-ai-predict" class="btn btn-success mt-3 ms-2">AI予測</button>
+<div class="row mt-4">
+  <div class="col-12 col-md-6 mb-3" id="ai-score-chart-area" style="display:none;">
+    <canvas id="ai-score-radar" width="400" height="400"></canvas>
+  </div>
+  <div class="col-12 col-md-6 mb-3" id="ai-predict-result-area" style="display:none;">
+    <div id="ai-predict-result" class="alert alert-info"></div>
+  </div>
+</div>
+<div id="ai-score-loading" class="text-center mt-3" style="display:none;">
+  <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading..." width="48" height="48">
+</div>
+<div id="ai-predict-loading" class="text-center mt-3" style="display:none;">
+  <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading..." width="48" height="48">
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(function() {
+  // AIスコア
+  $('#show-ai-score').on('click', function() {
+    const code = '{{ stock.code }}';
+    $('#ai-score-loading').show();
+    $('#ai-score-chart-area').hide();
+    $.getJSON(`/analysis/score/${code}`, function(data) {
+      $('#ai-score-loading').hide();
+      if (data.error) {
+        alert('AI評価取得失敗: ' + data.error);
+        return;
+      }
+      $('#ai-score-chart-area').show();
+      const ctx = document.getElementById('ai-score-radar').getContext('2d');
+      if(window.aiRadarChart) window.aiRadarChart.destroy();
+      window.aiRadarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: ['割安性', '安定性', '成長性', '収益性', '流動性'],
+          datasets: [{
+            label: 'AIスコア',
+            data: [data.valuation, data.stability, data.growth, data.profitability, data.liquidity],
+            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: false,
+          scale: {
+            min: 0,
+            max: 10,
+            ticks: { stepSize: 2 }
+          }
+        }
+      });
+    });
+  });
+
+  // AI予測
+  $('#show-ai-predict').on('click', function() {
+    const code = '{{ stock.code }}';
+    $('#ai-predict-loading').show();
+    $('#ai-predict-result-area').hide();
+    $.getJSON(`/prediction/predict/${code}`, function(data) {
+      $('#ai-predict-loading').hide();
+      let msg = '';
+      if (data.error) {
+        $('#ai-predict-result').removeClass('alert-info').addClass('alert-danger').text('AI予測取得失敗: ' + data.error);
+      } else if (data.logistic !== undefined || data.lightgbm !== undefined || data.nn !== undefined || data.ensemble !== undefined) {
+        msg = '<table class="table table-bordered mb-0">'
+          + '<thead><tr><th>モデル</th><th>3日後の上昇確率</th></tr></thead><tbody>';
+        if (data.logistic !== undefined) {
+          msg += `<tr><td>モデル1</td><td><strong>${(data.logistic * 100).toFixed(1)}%</strong></td></tr>`;
+        }
+        if (data.lightgbm !== undefined) {
+          msg += `<tr><td>モデル2</td><td><strong>${(data.lightgbm * 100).toFixed(1)}%</strong></td></tr>`;
+        }
+        if (data.nn !== undefined) {
+          msg += `<tr><td>モデル3</td><td><strong>${(data.nn * 100).toFixed(1)}%</strong></td></tr>`;
+        }
+        if (data.ensemble !== undefined) {
+          msg += `<tr><td>モデル4</td><td><strong>${(data.ensemble * 100).toFixed(1)}%</strong></td></tr>`;
+        }
+        msg += '</tbody></table>';
+        $('#ai-predict-result').removeClass('alert-danger').addClass('alert-info').html(msg);
+      } else {
+        $('#ai-predict-result').removeClass('alert-danger').addClass('alert-info').text('予測データがありません。');
+      }
+      $('#ai-predict-result-area').show();
+    });
+  });
+});
+</script>
+{% else %}
+<div class="alert alert-danger">株情報が見つかりませんでした。</div>
+<a href="/stocks/" class="btn btn-secondary">一覧に戻る</a>
+{% endif %}
+{% endblock %}

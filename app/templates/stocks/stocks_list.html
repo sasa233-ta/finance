@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}株一覧{% endblock %}
+{% block content %}
+<h2>株一覧</h2>
+<form class="row g-3 mb-3" method="get" action="">
+  <div class="col-auto">
+    <input type="text" class="form-control" name="q" placeholder="銘柄コード・銘柄名で検索" value="{{ q }}">
+  </div>
+  <div class="col-auto">
+    <select name="market" class="form-select">
+      <option value="">市場で絞込</option>
+      {% for m in markets %}
+        <option value="{{ m }}" {% if m == market %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="sector" class="form-select">
+      <option value="">業種で絞込</option>
+      {% for s in sectors %}
+        <option value="{{ s }}" {% if s == sector %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary">検索</button>
+  </div>
+</form>
+<table class="table table-striped">
+  <thead>
+    <tr>
+  <th>銘柄名</th>
+  <th>市場</th>
+  <th>業種</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for stock in stocks %}
+    <tr>
+      <td><a href="/stocks/{{ stock.code }}">【{{ stock.code }}】{{ stock.name }}</a></td>
+      <td>{{ stock.market }}</td>
+      <td>{{ stock.sector33 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<nav aria-label="ページナビゲーション">
+  <ul class="pagination justify-content-center">
+    {% if pagination.has_prev %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ pagination.prev_num }}">前へ</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">前へ</span></li>
+    {% endif %}
+    <li class="page-item disabled"><span class="page-link">{{ pagination.page }} / {{ pagination.pages }}</span></li>
+    {% if pagination.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ pagination.next_num }}">次へ</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">次へ</span></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endblock %}

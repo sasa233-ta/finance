@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}ユーザー管理{% endblock %}
+{% block content %}
+<h2>ユーザー管理</h2>
+<form class="row g-3 mb-3" method="get" action="/admin/users">
+  <div class="col-auto">
+    <input type="text" class="form-control" name="q" placeholder="ユーザー名・メールで検索" value="{{ request.args.get('q', '') }}">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary">検索</button>
+  </div>
+</form>
+<table class="table table-bordered">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>ユーザー名</th>
+      <th>メール</th>
+      <th>権限</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for user in users %}
+    <tr>
+      <td>{{ user.id }}</td>
+      <td>{{ user.username }}</td>
+      <td>{{ user.email }}</td>
+      <td>{{ user.role }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ user.id }}/role" class="d-inline">
+          <select name="role" class="form-select form-select-sm d-inline w-auto">
+            <option value="free" {% if user.role=='free' %}selected{% endif %}>無料</option>
+            <option value="paid" {% if user.role=='paid' %}selected{% endif %}>有料</option>
+            <option value="admin" {% if user.role=='admin' %}selected{% endif %}>管理者</option>
+          </select>
+          <button type="submit" class="btn btn-sm btn-secondary">変更</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if not users %}
+<div class="alert alert-info">ユーザーが見つかりません。</div>
+{% endif %}
+{% endblock %}

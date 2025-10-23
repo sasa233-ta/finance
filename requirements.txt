@@ -1,0 +1,17 @@
+flask
+yfinance
+pandas
+requests
+werkzeug
+python-dotenv
+sqlalchemy
+mysqlclient
+flask-login
+xlrd
+numpy
+scikit-learn
+lightgbm
+pytest
+psycopg2-binary
+Flask-Migrate
+gunicorn

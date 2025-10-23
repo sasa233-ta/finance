@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}管理者画面{% endblock %}
+{% block content %}
+<h2>管理者画面</h2>
+<div class="mb-4">
+  <a href="/admin/users" class="btn btn-primary me-2">ユーザー管理</a>
+  <form method="post" action="/admin/update_stocks" style="display:inline;">
+    <button type="submit" class="btn btn-warning">株データを更新</button>
+  </form>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+      <div class="alert alert-{{ category }} mt-3">{{ msg }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+{% endblock %}
