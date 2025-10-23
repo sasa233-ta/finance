@@ -22,7 +22,18 @@ class JQuantsAPI:
                 token = f.read().strip()
                 return token
         except FileNotFoundError:
-            raise FileNotFoundError(f"{DATA_DIR + path} が見つかりません。リフレッシュトークンを設定してください。")
+            # ファイルが存在しない場合は空ファイルを作成して空文字を返す。
+            # _get_id_token 側でリフレッシュトークンが空の場合は get_new_refresh_token() を試みるため
+            # ここで即座に例外にするよりも、ファイルを作っておく方が初回デプロイ時に扱いやすい。
+            try:
+                os.makedirs(DATA_DIR, exist_ok=True)
+                with open(DATA_DIR + path, "w", encoding="utf-8") as f:
+                    f.write("")
+                print(f"{DATA_DIR + path} を作成しました。リフレッシュトークンを配置するか環境変数で認証情報を設定してください。")
+            except Exception as e:
+                # ファイル作成に失敗したら元の例外相当のエラーを投げる
+                raise FileNotFoundError(f"{DATA_DIR + path} を作成できませんでした: {e}")
+            return ""
 
     def _get_id_token(self):
         url = f"{self.api_url}/v1/token/auth_refresh?refreshtoken={self.refresh_token}"
