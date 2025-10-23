@@ -33,7 +33,7 @@ PY
 fi
 
 # Optionally run DB init script (create tables + seed) when RUN_INIT=true
-if [ "${RUN_INIT:-false}" = "true" ]; then
+if [ "${RUN_INIT:-true}" = "true" ]; then
 	echo "RUN_INIT=true -> running init_db.py"
 	python init_db.py
 fi
