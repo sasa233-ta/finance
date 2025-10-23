@@ -7,6 +7,7 @@ __pycache__/
 migrations/
 instance/
 data/
+!data/.gitkeep
 *.sqlite3
 .DS_Store
 *.egg-info

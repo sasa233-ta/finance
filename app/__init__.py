@@ -1,3 +1,4 @@
+
 from flask import Flask
 
 def create_app():
@@ -5,6 +6,10 @@ def create_app():
 	app = Flask(__name__)
 	# Configuration
 	app.config.from_object('app.config.DevelopmentConfig')
+
+	# Initialize extensions that require app
+	from .auth.models import db
+	db.init_app(app)
 
 	# Register Blueprints
 	from .auth import auth as auth_blueprint
@@ -30,8 +35,12 @@ def create_app():
 
 	# 全画面でログイン必須（authのlogin, register, static, logout以外）
 	from flask import session, redirect, url_for, request
+
 	@app.before_request
 	def require_login():
+		# skip login check for CLI or when session not available
+		if not request:
+			return None
 		allowed = [
 			'/auth/login', '/auth/register', '/auth/logout', '/static/', '/favicon.ico'
 		]

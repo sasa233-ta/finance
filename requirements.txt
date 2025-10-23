@@ -5,7 +5,7 @@ requests
 werkzeug
 python-dotenv
 sqlalchemy
-mysqlclient
+Flask-SQLAlchemy
 flask-login
 xlrd
 numpy
@@ -13,5 +13,4 @@ scikit-learn
 lightgbm
 pytest
 psycopg2-binary
-Flask-Migrate
 gunicorn

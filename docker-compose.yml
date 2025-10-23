@@ -15,17 +15,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: sh -c "flask db upgrade && gunicorn run:app --bind 0.0.0.0:5000 --workers 1"
     environment:
       FLASK_ENV: development
       DATABASE_URL: postgres://postgres:postgres@db:5432/appdb
       SECRET_KEY: dev-secret
       RUN_MIGRATIONS: "true"
+      RUN_INIT: "true"
     ports:
       - "5000:5000"
     depends_on:
       - db
     volumes:
-      - .:/app
+      - ./app:/app
 volumes:
   db-data:
