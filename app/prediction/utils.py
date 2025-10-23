@@ -80,17 +80,46 @@ from sklearn.preprocessing import StandardScaler
 
 class StockModels:
     def __init__(self):
-        self.lr = LogisticRegression(max_iter=1000)
-        self.mlp = MLPClassifier(hidden_layer_sizes=(32, 16), max_iter=1000, random_state=42)
+        # 学習コストを抑えるためデフォルトの反復回数を下げ、MLPは早期停止を有効にする
+        self.lr = LogisticRegression(max_iter=500)
+        self.mlp = MLPClassifier(hidden_layer_sizes=(32, 16), max_iter=200, early_stopping=True, n_iter_no_change=10, random_state=42)
         self.lgbm = None
         self.scaler = StandardScaler()
+        # 学習制御パラメータ
+        self.max_samples = 1500  # これ以上の行は末尾を採用してトレーニングデータを制限する
+        self.lgb_rounds = 50
+        self.lgb_early_stopping = 10
 
     def fit(self, X_train, y_train):
+        # データ量が大きい場合は末尾 N サンプルに制限する（直近のデータを利用するため）
+        if X_train.shape[0] > self.max_samples:
+            start_idx = X_train.shape[0] - self.max_samples
+            X_train = X_train[start_idx:]
+            y_train = y_train[start_idx:]
+
+        # ロジスティック回帰
         self.lr.fit(X_train, y_train)
+
+        # 標準化と MLP 学習（早期停止有効）
         self.scaler.fit(X_train)
         X_train_std = self.scaler.transform(X_train)
-        self.mlp.fit(X_train_std, y_train)
-        lgb_train = lgb.Dataset(X_train, y_train)
+        try:
+            self.mlp.fit(X_train_std, y_train)
+        except Exception as e:
+            # 学習失敗しても続行できるようログ出力のみ
+            print('MLP fit failed:', e)
+
+        # LightGBM は検証データを作って早期停止をかける
+        # 小さい割合を validation に割り当てる
+        if X_train.shape[0] >= 50:
+            val_size = max( int(0.1 * X_train.shape[0]), 10 )
+            X_tr, X_val = X_train[:-val_size], X_train[-val_size:]
+            y_tr, y_val = y_train[:-val_size], y_train[-val_size:]
+        else:
+            X_tr, X_val, y_tr, y_val = X_train, X_train, y_train, y_train
+
+        lgb_train = lgb.Dataset(X_tr, y_tr)
+        lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
         params = {
             'objective': 'binary',
             'metric': 'auc',
@@ -98,7 +127,35 @@ class StockModels:
             'boosting_type': 'gbdt',
             'seed': 42
         }
-        self.lgbm = lgb.train(params, lgb_train, num_boost_round=100)
+        try:
+            self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], early_stopping_rounds=self.lgb_early_stopping)
+        except Exception as e:
+            print('LightGBM training failed:', e)
+            self.lgbm = None
+
+        return self
+
+    def save(self, path):
+        # モデルをpickleで保存（scaler, lr, mlp, lgbm をまとめて保存）
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            pickle.dump({
+                'lr': self.lr,
+                'mlp': self.mlp,
+                'lgbm': self.lgbm,
+                'scaler': self.scaler
+            }, f)
+
+    @classmethod
+    def load(cls, path):
+        with open(path, 'rb') as f:
+            data = pickle.load(f)
+        inst = cls()
+        inst.lr = data.get('lr', inst.lr)
+        inst.mlp = data.get('mlp', inst.mlp)
+        inst.lgbm = data.get('lgbm', inst.lgbm)
+        inst.scaler = data.get('scaler', inst.scaler)
+        return inst
 
     def predict_proba(self, X_test):
         # --- デバッグ: 入力・モデル状態確認 ---
@@ -115,7 +172,12 @@ class StockModels:
             print('MLPClassifier予測エラー:', e)
             raise
         try:
-            lgb_pred = self.lgbm.predict(X_test, num_iteration=self.lgbm.best_iteration)
+            if self.lgbm is None:
+                # 学習に失敗している場合は中立的な確率を返す（0.5）
+                lgb_pred = np.full(X_test.shape[0], 0.5)
+            else:
+                # LightGBM の予測では標準の predict を使用
+                lgb_pred = self.lgbm.predict(X_test, num_iteration=self.lgbm.best_iteration)
         except Exception as e:
             print('LightGBM予測エラー:', e)
             raise
