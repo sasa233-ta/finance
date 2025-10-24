@@ -54,7 +54,7 @@ def make_features(df: pd.DataFrame) -> pd.DataFrame:
     df['Close'] = df['Close'].astype(float)
     df['Volume'] = df['Volume'].astype(float)
     df['Close_shift3'] = df['Close'].shift(-3)
-    df['target'] = ((df['Close_shift3'] - df['Close']) / df['Close'] >= 0.015).astype(int)
+    df['target'] = ((df['Close_shift3'] - df['Close']) / df['Close'] >= 0.01).astype(int)
     df['ret_1'] = df['Close'].pct_change(1)
     df['ret_5'] = df['Close'].pct_change(5)
     # additional technical features
@@ -117,12 +117,22 @@ class StockModels:
             X_train = X_train[start_idx:]
             y_train = y_train[start_idx:]
 
-        # ロジスティック回帰
-        self.lr.fit(X_train, y_train)
+        # 標準化を先に行い、ロジスティック回帰とMLPの両方を標準化データで学習する
+        try:
+            self.scaler.fit(X_train)
+            X_train_std = self.scaler.transform(X_train)
+        except Exception as e:
+            print('Scaler fit/transform failed:', e)
+            # フォールバックして元データを使う
+            X_train_std = X_train
 
-        # 標準化と MLP 学習（早期停止有効）
-        self.scaler.fit(X_train)
-        X_train_std = self.scaler.transform(X_train)
+        # ロジスティック回帰（標準化データで学習）
+        try:
+            self.lr.fit(X_train_std, y_train)
+        except Exception as e:
+            print('LogisticRegression fit failed:', e)
+
+        # MLP 学習（早期停止有効）
         try:
             self.mlp.fit(X_train_std, y_train)
         except Exception as e:
@@ -201,13 +211,20 @@ class StockModels:
     def predict_proba(self, X_test):
         # --- デバッグ: 入力・モデル状態確認 ---
         print('predict_proba: X_test shape:', X_test.shape)
+        # 標準化した入力をロジスティックとMLPの両方で使う
         try:
-            lr_pred = self.lr.predict_proba(X_test)[:, 1]
+            X_test_std = self.scaler.transform(X_test)
+        except Exception as e:
+            print('Scaler transform failed for X_test:', e)
+            X_test_std = X_test
+
+        try:
+            lr_pred = self.lr.predict_proba(X_test_std)[:, 1]
         except Exception as e:
             print('LogisticRegression予測エラー:', e)
             raise
+
         try:
-            X_test_std = self.scaler.transform(X_test)
             mlp_pred = self.mlp.predict_proba(X_test_std)[:, 1]
         except Exception as e:
             print('MLPClassifier予測エラー:', e)

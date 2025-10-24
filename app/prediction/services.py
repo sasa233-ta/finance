@@ -25,18 +25,14 @@ def predict_stock(code):
     # features = ['ret_1', 'ret_5', 'ma_5', 'ma_25', 'ma_gap', 'vol_5', 'temperature_2m_max']
     X = df_feat[features].values
     y = df_feat['target'].values
-    # 時系列データなのでランダム分割は避け、最初の70%を学習、残りをテストとする
+    # 重複を許容する分割: 最初の70%を訓練、最後の70%をテストにする（オーバーラップあり）
     n = X.shape[0]
     if n < 2:
         raise RuntimeError('Not enough samples to split')
-    n_train = int(n * 0.7)
-    if n_train < 1:
-        n_train = 1
-    if n - n_train < 1:
-        # 最低1サンプルはテストに残す
-        n_train = n - 1
-    X_train, X_test = X[:n_train], X[n_train:]
-    y_train, y_test = y[:n_train], y[n_train:]
+    n_train = max(1, int(n * 0.7))
+    n_test = max(1, int(n * 0.7))
+    X_train, X_test = X[:n_train], X[-n_test:]
+    y_train, y_test = y[:n_train], y[-n_test:]
     models = StockModels()
     models.fit(X_train, y_train)
     preds = models.predict_proba(X_test)
