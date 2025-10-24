@@ -11,8 +11,8 @@
 </ul>
 <a href="/stocks/" class="btn btn-secondary">一覧に戻る</a>
 
-<button id="show-ai-score" class="btn btn-primary mt-3">AI評価</button>
-<button id="show-ai-predict" class="btn btn-success mt-3 ms-2">AI予測</button>
+<button id="show-ai-score" class="btn btn-primary mt-3">評価</button>
+<button id="show-ai-predict" class="btn btn-success mt-3 ms-2">予測</button>
 <div class="row mt-4">
   <div class="col-12 col-md-6 mb-3" id="ai-score-chart-area" style="display:none;">
     <canvas id="ai-score-radar" width="400" height="400"></canvas>
@@ -30,7 +30,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 $(function() {
-  // AIスコア
+  // スコア
   $('#show-ai-score').on('click', function() {
     const code = '{{ stock.code }}';
     $('#ai-score-loading').show();
@@ -49,7 +49,7 @@ $(function() {
         data: {
           labels: ['割安性', '安定性', '成長性', '収益性', '流動性'],
           datasets: [{
-            label: 'AIスコア',
+            label: 'スコア',
             data: [data.valuation, data.stability, data.growth, data.profitability, data.liquidity],
             backgroundColor: 'rgba(54, 162, 235, 0.2)',
             borderColor: 'rgba(54, 162, 235, 1)',
@@ -84,7 +84,7 @@ $(function() {
         if (data.logistic !== undefined) {
           msg += `<tr><td>モデル1</td><td><strong>${(data.logistic * 100).toFixed(1)}%</strong></td></tr>`;
         }
-        if (data.lightgbm !== undefined) {
+        if (data.logistic !== undefined || data.lightgbm !== undefined || data.nn !== undefined || data.ensemble !== undefined) {
           msg += `<tr><td>モデル2</td><td><strong>${(data.lightgbm * 100).toFixed(1)}%</strong></td></tr>`;
         }
         if (data.nn !== undefined) {
@@ -94,6 +94,17 @@ $(function() {
           msg += `<tr><td>モデル4</td><td><strong>${(data.ensemble * 100).toFixed(1)}%</strong></td></tr>`;
         }
         msg += '</tbody></table>';
+
+        // 管理者向け: AUC を表示（API が返している場合）
+        if (data.auc) {
+          let aucTable = '<table class="table table-sm table-bordered mt-2"><thead><tr><th>モデル</th><th>AUC</th></tr></thead><tbody>';
+          if (data.auc.logistic !== undefined) aucTable += `<tr><td>モデル1</td><td>${(data.auc.logistic).toFixed(3)}</td></tr>`;
+          if (data.auc.lightgbm !== undefined) aucTable += `<tr><td>モデル2</td><td>${(data.auc.lightgbm).toFixed(3)}</td></tr>`;
+          if (data.auc.nn !== undefined) aucTable += `<tr><td>モデル3</td><td>${(data.auc.nn).toFixed(3)}</td></tr>`;
+          if (data.auc.ensemble !== undefined) aucTable += `<tr><td>モデル4</td><td>${(data.auc.ensemble).toFixed(3)}</td></tr>`;
+          aucTable += '</tbody></table>';
+          msg += aucTable;
+        }
         $('#ai-predict-result').removeClass('alert-danger').addClass('alert-info').html(msg);
       } else {
         $('#ai-predict-result').removeClass('alert-danger').addClass('alert-info').text('予測データがありません。');

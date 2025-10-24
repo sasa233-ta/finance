@@ -57,10 +57,27 @@ def make_features(df: pd.DataFrame) -> pd.DataFrame:
     df['target'] = ((df['Close_shift3'] - df['Close']) / df['Close'] >= 0.015).astype(int)
     df['ret_1'] = df['Close'].pct_change(1)
     df['ret_5'] = df['Close'].pct_change(5)
+    # additional technical features
+    df['ret_3'] = df['Close'].pct_change(3)
+    df['ret_10'] = df['Close'].pct_change(10)
     df['ma_5'] = df['Close'].rolling(5).mean()
     df['ma_25'] = df['Close'].rolling(25).mean()
     df['ma_gap'] = (df['Close'] - df['ma_25']) / df['ma_25']
     df['vol_5'] = df['Volume'].rolling(5).mean()
+    df['vol_std_5'] = df['Volume'].rolling(5).std()
+    df['vol_std_10'] = df['Volume'].rolling(10).std()
+    # ma ratio
+    df['ma_ratio_5_25'] = df['ma_5'] / df['ma_25']
+    # momentum
+    df['mom_5'] = df['Close'] / df['Close'].shift(5) - 1
+    # RSI (simple implementation)
+    delta = df['Close'].diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    roll_up = up.rolling(14).mean()
+    roll_down = down.rolling(14).mean()
+    rs = roll_up / roll_down
+    df['rsi_14'] = 100 - (100 / (1 + rs))
     start_date = df['Date'].min()
     end_date = df['Date'].max()
     pickle_path = os.path.join('data', 'tokyo_weather.pkl')
@@ -68,7 +85,10 @@ def make_features(df: pd.DataFrame) -> pd.DataFrame:
     df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
     weather_df['date'] = pd.to_datetime(weather_df['date']).dt.strftime('%Y-%m-%d')
     df_merged = pd.merge(df, weather_df, left_on='Date', right_on='date', how='left')
-    df_merged = df_merged.dropna(subset=['ret_1', 'ret_5', 'ma_5', 'ma_25', 'ma_gap', 'vol_5', 'target'])
+    # drop rows missing essential features
+    essential = ['ret_1', 'ret_5', 'ma_5', 'ma_25', 'ma_gap', 'vol_5', 'target']
+    existing_essentials = [c for c in essential if c in df_merged.columns]
+    df_merged = df_merged.dropna(subset=existing_essentials)
     return df_merged
 
 # --- model_service.py ---
@@ -127,11 +147,32 @@ class StockModels:
             'boosting_type': 'gbdt',
             'seed': 42
         }
-        try:
-            self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], early_stopping_rounds=self.lgb_early_stopping)
-        except Exception as e:
-            print('LightGBM training failed:', e)
-            self.lgbm = None
+
+        # Try multiple training call styles to maximize compatibility across LightGBM versions.
+        # 1) callbacks API (newer versions)
+        # 2) early_stopping_rounds kwarg (some versions)
+        # 3) no early stopping
+        self.lgbm = None
+        if hasattr(lgb, 'early_stopping') and self.lgb_early_stopping and self.lgb_early_stopping > 0:
+            try:
+                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], callbacks=[lgb.early_stopping(self.lgb_early_stopping)])
+            except Exception as e_cb:
+                print('LightGBM training with callbacks failed:', e_cb)
+
+        # If callbacks attempt failed or wasn't used, try early_stopping_rounds kwarg
+        if self.lgbm is None and self.lgb_early_stopping and self.lgb_early_stopping > 0:
+            try:
+                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], early_stopping_rounds=self.lgb_early_stopping)
+            except Exception as e_es:
+                print('LightGBM training with early_stopping_rounds failed:', e_es)
+
+        # Finally, try without early stopping
+        if self.lgbm is None:
+            try:
+                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val])
+            except Exception as e_final:
+                print('LightGBM training failed (no early stopping):', e_final)
+                self.lgbm = None
 
         return self
 
@@ -172,12 +213,31 @@ class StockModels:
             print('MLPClassifier予測エラー:', e)
             raise
         try:
+            # Check feature dimension matches scaler (if scaler was fitted)
+            try:
+                expected_dim = self.scaler.mean_.shape[0]
+                if X_test.shape[1] != expected_dim:
+                    print(f"Warning: X_test feature dim ({X_test.shape[1]}) != expected ({expected_dim}).")
+            except Exception:
+                # scaler may not be fitted in some failure modes; ignore
+                pass
+
             if self.lgbm is None:
                 # 学習に失敗している場合は中立的な確率を返す（0.5）
                 lgb_pred = np.full(X_test.shape[0], 0.5)
             else:
-                # LightGBM の予測では標準の predict を使用
-                lgb_pred = self.lgbm.predict(X_test, num_iteration=self.lgbm.best_iteration)
+                # LightGBM の predict ではベストイテレーションが存在すれば使う。
+                # バージョン差で属性名が異なる場合に備えフォールバックを行う。
+                num_iter = None
+                for attr in ('best_iteration', 'best_iteration_'):
+                    num_iter = getattr(self.lgbm, attr, None)
+                    if num_iter:
+                        break
+                # num_iter が 0 や None の場合は渡さない
+                if num_iter and int(num_iter) > 0:
+                    lgb_pred = self.lgbm.predict(X_test, num_iteration=int(num_iter))
+                else:
+                    lgb_pred = self.lgbm.predict(X_test)
         except Exception as e:
             print('LightGBM予測エラー:', e)
             raise

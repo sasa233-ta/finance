@@ -71,7 +71,8 @@ class JQuantsAPI:
         code = normalize_code(code)
         today = datetime.date.today()
         now = datetime.datetime.now()
-        if now.hour < 9:
+        # 15:30 より前は前日データを参照する（市場クローズ後の当日データ取得を待つため）
+        if (now.hour < 15) or (now.hour == 15 and now.minute < 30):
             today = today - datetime.timedelta(days=1)
         if today.weekday() == 5:
             today = today - datetime.timedelta(days=1)
@@ -86,7 +87,7 @@ class JQuantsAPI:
         headers = {'Authorization': f'Bearer {self.id_token}'}
         params = {'code': code, 'from': start, 'to': end}
         url = f"{self.api_url}/v1/prices/daily_quotes"
-        print(f"[J-Quants APIリクエスト] code={code}")
+        print(f"[J-Quants APIリクエスト] code={code}, start={start}, end={end}")
         resp = requests.get(url, headers=headers, params=params)
         if resp.status_code != 200:
             print(f"[J-Quants APIエラー] status_code={resp.status_code}, url={url}, text={resp.text}")
@@ -101,7 +102,8 @@ class JQuantsAPI:
         if date is None:
             today = datetime.date.today()
             now = datetime.datetime.now()
-            if now.hour < 9:
+            # 15:30 より前は前日データを参照する
+            if (now.hour < 15) or (now.hour == 15 and now.minute < 30):
                 today = today - datetime.timedelta(days=1)
             if today.weekday() == 5:
                 today = today - datetime.timedelta(days=1)
