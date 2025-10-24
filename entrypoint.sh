@@ -33,7 +33,8 @@ PY
 fi
 
 # Optionally run DB init script (create tables + seed) when RUN_INIT=true
-if [ "${RUN_INIT:-true}" = "true" ]; then
+# Default to false to avoid re-running init on every container restart in development.
+if [ "${RUN_INIT:-false}" = "true" ]; then
 	echo "RUN_INIT=true -> running init_db.py"
 	python init_db.py
 fi

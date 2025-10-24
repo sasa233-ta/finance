@@ -48,7 +48,7 @@
   <ul class="pagination justify-content-center">
     {% if pagination.has_prev %}
       <li class="page-item">
-        <a class="page-link" href="?page={{ pagination.prev_num }}">前へ</a>
+        <a class="page-link" href="?page={{ pagination.prev_num }}{% if market %}&market={{ market }}{% endif %}{% if sector %}&sector={{ sector }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">前へ</a>
       </li>
     {% else %}
       <li class="page-item disabled"><span class="page-link">前へ</span></li>
@@ -56,7 +56,7 @@
     <li class="page-item disabled"><span class="page-link">{{ pagination.page }} / {{ pagination.pages }}</span></li>
     {% if pagination.has_next %}
       <li class="page-item">
-        <a class="page-link" href="?page={{ pagination.next_num }}">次へ</a>
+        <a class="page-link" href="?page={{ pagination.next_num }}{% if market %}&market={{ market }}{% endif %}{% if sector %}&sector={{ sector }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">次へ</a>
       </li>
     {% else %}
       <li class="page-item disabled"><span class="page-link">次へ</span></li>

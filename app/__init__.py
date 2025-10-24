@@ -36,6 +36,11 @@ def create_app():
 	# 全画面でログイン必須（authのlogin, register, static, logout以外）
 	from flask import session, redirect, url_for, request
 
+	# ルート ('/') へアクセスしたらログインページへリダイレクト
+	@app.route('/')
+	def index():
+		return redirect(url_for('auth.login_page'))
+
 	@app.before_request
 	def require_login():
 		# skip login check for CLI or when session not available

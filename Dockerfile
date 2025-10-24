@@ -21,5 +21,8 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 5000
 
 ENTRYPOINT ["/entrypoint.sh"]
-# Use sh -c in CMD so environment variables like $PORT are expanded at runtime (Railway provides $PORT)
-CMD ["sh", "-c", "gunicorn run:app --bind 0.0.0.0:${PORT:-5000} --workers 3"]
+# Allow runtime configuration of gunicorn workers and timeout via environment variables.
+# GUNICORN_WORKERS: number of worker processes (default 3)
+# GUNICORN_TIMEOUT: worker timeout in seconds (default 120)
+# Use sh -c so environment variables like $PORT are expanded at runtime.
+CMD ["sh", "-c", "gunicorn run:app --bind 0.0.0.0:${PORT:-5000} --workers ${GUNICORN_WORKERS:-3} --timeout ${GUNICORN_TIMEOUT:-120}"]

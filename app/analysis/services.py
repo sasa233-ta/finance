@@ -34,26 +34,72 @@ class StockAnalyzer:
         issue = self.issue_df.iloc[-1]
 
         # 割安性: PER, PBR（計算式で求める）
+        # 注意: 財務数値の単位（例: 金額が千円・百万円単位で入っている場合）や
+        # EPS/BPS の符号により結果が大きく変わるため、可能な限り安全に計算します。
         try:
-            close = float(stock['Close']) if 'Close' in stock and stock['Close'] else None
-            profit = float(fin['Profit']) if 'Profit' in fin and fin['Profit'] else None
-            equity = float(fin['Equity']) if 'Equity' in fin and fin['Equity'] else None
-            shares = float(fin['NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock']) if 'NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock' in fin and fin['NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock'] else None
-            eps = (profit / shares) if profit and shares else None
-            bps = (equity / shares) if equity and shares else None
-            per = (close / eps) if close and eps and eps != 0 else None
-            pbr = (close / bps) if close and bps and bps != 0 else None
-            score_valuation = None
-            if per is not None and pbr is not None:
-                score = 10 - (per / 10 + pbr)
-                score_valuation = round(min(max(score, 0), 10), 1)
-            elif per is not None:
-                score = 10 - (per / 10)
-                score_valuation = round(min(max(score, 0), 10), 1)
-            elif pbr is not None:
-                score = 10 - pbr
-                score_valuation = round(min(max(score, 0), 10), 1)
-        except Exception as e:
+            def safe_float(d, key):
+                if d is None:
+                    return None
+                # d may be a Series or dict-like
+                try:
+                    v = d.get(key) if hasattr(d, 'get') else d[key]
+                except Exception:
+                    return None
+                if v in (None, '', 'None'):
+                    return None
+                try:
+                    return float(v)
+                except Exception:
+                    return None
+
+            close = safe_float(stock, 'Close')
+            profit = safe_float(fin, 'Profit')
+            equity = safe_float(fin, 'Equity')
+            shares = safe_float(fin, 'NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock')
+
+            # EPS/BPS: まずは profit/share, equity/share を試算
+            eps = (profit / shares) if (profit is not None and shares is not None and shares != 0) else None
+            bps = (equity / shares) if (equity is not None and shares is not None and shares != 0) else None
+
+            # PER = price / EPS (EPS が正のときのみ意味を持つ)
+            per = None
+            if close is not None and eps is not None and eps != 0:
+                # ignore negative or extremely small EPS (may indicate loss or unit mismatch)
+                if eps > 1e-9:
+                    per = close / eps
+
+            # PBR: 理論的には market_cap / equity が正しい。market_cap = close * shares
+            pbr = None
+            if equity is not None and equity != 0:
+                if close is not None and shares is not None:
+                    market_cap = close * shares
+                    # if market_cap and equity are on same scale, this is reliable
+                    pbr = market_cap / equity
+                elif bps is not None and bps != 0:
+                    # fallback to price / bps
+                    pbr = close / bps if close is not None else None
+
+            # マッピング: PER は小さいほど良い、PBR も小さいほど良い。
+            # 実務的な閾値を用いて 0-10 に逆比例マッピングする（閾値は調整可能）。
+            PER_THRESHOLD = 20.0
+            PBR_THRESHOLD = 2.0
+
+            def score_from_inverse(val, thr):
+                # val が小さいほど高スコア。val <= 0 は None（または 0 点）に扱う。
+                if val is None or val <= 0:
+                    return None
+                try:
+                    score = (thr / val) * 10.0
+                    return round(min(max(score, 0.0), 10.0), 1)
+                except Exception:
+                    return None
+
+            per_score = score_from_inverse(per, PER_THRESHOLD)
+            pbr_score = score_from_inverse(pbr, PBR_THRESHOLD)
+
+            score_candidates = [s for s in (per_score, pbr_score) if s is not None]
+            score_valuation = round(sum(score_candidates) / len(score_candidates), 1) if score_candidates else None
+        except Exception:
             score_valuation = None
 
         # 安定性: 自己資本比率（equity_to_asset_ratio）
@@ -83,27 +129,51 @@ class StockAnalyzer:
         except Exception as e:
             score_growth = None
 
-        # 収益性: ROE・ROA・営業利益率の平均
+        # 収益性: ROE・ROA・営業利益率を閾値ベースで 0-10 に正規化して平均をとる
         try:
-            profit = float(fin['Profit']) if 'Profit' in fin and fin['Profit'] else None
-            equity = float(fin['Equity']) if 'Equity' in fin and fin['Equity'] else None
-            total_assets = float(fin['TotalAssets']) if 'TotalAssets' in fin and fin['TotalAssets'] else None
-            operating_profit = float(fin['OperatingProfit']) if 'OperatingProfit' in fin and fin['OperatingProfit'] else None
-            net_sales = float(fin['NetSales']) if 'NetSales' in fin and fin['NetSales'] else None
+            # 値の取得: '0' や 0 を有効な値として扱う
+            def to_float_safe(d, key):
+                v = d.get(key, None)
+                if v is None:
+                    return None
+                try:
+                    return float(v)
+                except Exception:
+                    return None
 
-            roe = (profit / equity * 100) if profit and equity else None
-            roa = (profit / total_assets * 100) if profit and total_assets else None
-            op_margin = (operating_profit / net_sales * 100) if operating_profit and net_sales else None
+            profit = to_float_safe(fin, 'Profit')
+            equity = to_float_safe(fin, 'Equity')
+            total_assets = to_float_safe(fin, 'TotalAssets')
+            operating_profit = to_float_safe(fin, 'OperatingProfit')
+            net_sales = to_float_safe(fin, 'NetSales')
 
-            # それぞれ0～20点換算し、平均を10点満点に正規化
+            roe_pct = (profit / equity * 100.0) if (profit is not None and equity not in (None, 0)) else None
+            roa_pct = (profit / total_assets * 100.0) if (profit is not None and total_assets not in (None, 0)) else None
+            op_margin_pct = (operating_profit / net_sales * 100.0) if (operating_profit is not None and net_sales not in (None, 0)) else None
+
+            # 閾値（業界や方針に応じて調整可能）
+            ROE_THRESHOLD = 15.0      # 15% を満点
+            ROA_THRESHOLD = 7.5      # 7.5% を満点
+            OP_MARGIN_THRESHOLD = 10.0  # 10% を満点
+
+            def map_to_0_10(val, thr):
+                if val is None:
+                    return None
+                try:
+                    score = (val / thr) * 10.0
+                    return min(max(score, 0.0), 10.0)
+                except Exception:
+                    return None
+
             scores = []
-            if roe is not None:
-                scores.append(min(max(roe / 2, 0), 20))
-            if roa is not None:
-                scores.append(min(max(roa * 2, 0), 20))
-            if op_margin is not None:
-                scores.append(min(max(op_margin / 5, 0), 20))
-            score_profitability = round(sum(scores) / len(scores) / 2, 1) if scores else None
+            roe_score = map_to_0_10(roe_pct, ROE_THRESHOLD)
+            roa_score = map_to_0_10(roa_pct, ROA_THRESHOLD)
+            op_margin_score = map_to_0_10(op_margin_pct, OP_MARGIN_THRESHOLD)
+            for s in (roe_score, roa_score, op_margin_score):
+                if s is not None:
+                    scores.append(s)
+
+            score_profitability = round(sum(scores) / len(scores), 1) if scores else None
         except Exception as e:
             score_profitability = None
 
