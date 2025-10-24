@@ -45,4 +45,5 @@ def login():
 @auth.route('/logout')
 def logout():
     session.clear()
-    return jsonify({'message': 'Logged out'})
+    # ログアウトしたらログイン画面へリダイレクトする
+    return redirect(url_for('auth.login_page'))
