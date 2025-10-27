@@ -39,4 +39,15 @@ if [ "${RUN_INIT:-false}" = "true" ]; then
 	python init_db.py
 fi
 
+# Optionally run DB migrations when RUN_MIGRATIONS=true
+if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+	echo "RUN_MIGRATIONS=true -> running flask db upgrade"
+	# run via python -m to ensure the correct interpreter / environment is used
+	# if this fails we exit with non-zero so the container does not start with an out-of-sync schema
+	if ! python -m flask db upgrade; then
+		echo "flask db upgrade failed"
+		exit 1
+	fi
+fi
+
 exec "$@"

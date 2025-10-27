@@ -4,8 +4,21 @@
 <h2>管理者画面</h2>
 <div class="mb-4">
   <a href="/admin/users" class="btn btn-primary me-2">ユーザー管理</a>
+  <a href="/admin/tables" class="btn btn-secondary me-2">テーブル一覧</a>
   <form method="post" action="/admin/update_stocks" style="display:inline;">
     <button type="submit" class="btn btn-warning">株データを更新</button>
+  </form>
+  <form method="post" action="/admin/fetch_prime_pickles" style="display:inline; margin-left:8px;">
+    <button type="submit" class="btn btn-success">プライム株（17業種）データ取得</button>
+  </form>
+  <form method="post" action="/admin/update_rankings" style="display:inline; margin-left:8px;" class="d-inline-flex align-items-center">
+    <div class="me-2">
+      <label for="max_items" class="form-label mb-0 small">テスト件数</label>
+      <input type="number" min="1" step="1" name="max_items" id="max_items" class="form-control form-control-sm" placeholder="(任意) 例:5" style="width:80px;">
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary">ランキング更新（確率一括投入）</button>
+    </div>
   </form>
 </div>
 {% with messages = get_flashed_messages(with_categories=true) %}

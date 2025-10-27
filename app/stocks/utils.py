@@ -17,6 +17,7 @@ import os
 import time
 import random
 from datetime import date, timedelta, datetime
+from app.utils import market_today
 from tempfile import NamedTemporaryFile
 from typing import Dict, Iterable, List, Optional
 
@@ -137,7 +138,8 @@ def fetch_and_save_by_industry(industry_map: Dict[str, List[str]],
 	  dict mapping industry_code -> list of saved file paths
 	"""
 	results: Dict[str, List[str]] = {}
-	end_dt = date.today()
+	# Use market-aware 'today' (if current time is before 15:30, use previous trading day)
+	end_dt = market_today()
 	try:
 		start_dt = end_dt.replace(year=end_dt.year - years)
 	except Exception:
