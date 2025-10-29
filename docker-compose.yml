@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
     environment:
       FLASK_ENV: development
-      DATABASE_URL: sqlite:///../data/app.db
+      DATABASE_URL: sqlite:////data/app.db
     ports:
       - "5000:5000"
     # depends_on:

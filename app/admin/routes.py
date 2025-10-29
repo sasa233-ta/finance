@@ -29,7 +29,34 @@ def change_role(user_id):
 @login_required
 @role_required('admin')
 def admin_page():
-    return render_template('admin/admin.html')
+    # read last prime fetch timestamp (written by fetch_prime_industry_pickles)
+    import os
+    from datetime import datetime
+
+    ts_path = os.path.join('data', 'prime_fetch.timestamp')
+    prime_last = None
+    try:
+        if os.path.exists(ts_path):
+            with open(ts_path, 'r', encoding='utf-8') as f:
+                txt = f.read().strip()
+                if txt:
+                    # expecting ISO date like YYYY-MM-DD
+                    try:
+                        d = datetime.fromisoformat(txt)
+                    except Exception:
+                        # fallback: parse date-only
+                        try:
+                            d = datetime.strptime(txt, '%Y-%m-%d')
+                        except Exception:
+                            d = None
+                    if d:
+                        weekdays = ['月','火','水','木','金','土','日']
+                        wd = weekdays[d.weekday()]
+                        prime_last = f"{d.date().isoformat()} ({wd})"
+    except Exception:
+        prime_last = None
+
+    return render_template('admin/admin.html', prime_last_fetch=prime_last)
 
 
 @admin.route('/tables', methods=['GET'])
