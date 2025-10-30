@@ -16,6 +16,9 @@ import pandas as pd
 import requests
 from datetime import datetime
 from app.auth.models import db
+import logging
+
+logger = logging.getLogger(__name__)
 from app.stocks.models import Stock, RiseProbabilitySummary
 
 def get_rankings(sector: str = None, model: str = 'prob_model1', limit: int = 20):
@@ -114,7 +117,7 @@ def fetch_and_update_stocks():
     return len(stocks)
 
 
-def update_or_create_rise_probs(stock_code: str, probs: dict):
+def update_or_create_rise_probs(stock_code: str, probs: dict, set_null_for_missing: bool = False):
     """Upsert rise probability summary for `stock_code`.
 
     `probs` expected keys: 'model1','model2','model3','model4' (values convertible to float).
@@ -122,6 +125,7 @@ def update_or_create_rise_probs(stock_code: str, probs: dict):
     """
     stock = Stock.query.filter_by(code=stock_code).first()
     if not stock:
+        logger.debug('update_or_create_rise_probs: stock not found: %s', stock_code)
         return False, f'stock not found: {stock_code}'
 
     try:
@@ -130,26 +134,49 @@ def update_or_create_rise_probs(stock_code: str, probs: dict):
         if not row:
             row = RiseProbabilitySummary(stock_code=stock.code)
             db.session.add(row)
+            logger.debug('update_or_create_rise_probs: created new RiseProbabilitySummary for %s', stock.code)
 
-        # set provided probabilities (ignore missing keys)
+        # set provided probabilities. If set_null_for_missing is True, set missing keys to NULL.
         for key in ('model1', 'model2', 'model3', 'model4'):
             val = probs.get(key)
             if val is not None:
-                setattr(row, f'prob_{key}', float(val))
+                    try:
+                        setattr(row, f'prob_{key}', float(val))
+                        logger.debug('update_or_create_rise_probs: set prob_%s = %s for %s', key, val, stock.code)
+                    except Exception:
+                        logger.exception('update_or_create_rise_probs: failed to set prob_%s for %s with val=%s', key, stock.code, val)
+            else:
+                if set_null_for_missing:
+                    try:
+                        setattr(row, f'prob_{key}', None)
+                        logger.debug('update_or_create_rise_probs: cleared prob_%s (NULL) for %s', key, stock.code)
+                    except Exception:
+                        # ignore if attribute missing
+                        logger.exception('update_or_create_rise_probs: failed to clear prob_%s for %s', key, stock.code)
 
-        # set provided AUC scores if present
+        # set provided AUC scores if present; support clearing AUCs when requested
         for key in ('model1', 'model2', 'model3', 'model4'):
             auc_key = f'auc_{key}'
             auc_val = probs.get(auc_key)
             if auc_val is not None:
                 try:
                     setattr(row, f'auc_{key}', float(auc_val))
+                    logger.debug('update_or_create_rise_probs: set auc_%s = %s for %s', key, auc_val, stock.code)
                 except Exception:
                     # ignore invalid auc values
                     pass
+            else:
+                if set_null_for_missing:
+                    try:
+                        setattr(row, f'auc_{key}', None)
+                        logger.debug('update_or_create_rise_probs: cleared auc_%s (NULL) for %s', key, stock.code)
+                    except Exception:
+                        pass
 
         db.session.commit()
+        logger.info('update_or_create_rise_probs: committed RiseProbabilitySummary for %s', stock.code)
         return True, row
     except Exception as e:
         db.session.rollback()
+        logger.exception('update_or_create_rise_probs: db error for %s', stock.code)
         return False, f'db error: {e}'

@@ -12,6 +12,9 @@ import json
 import uuid
 import time
 import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
@@ -170,7 +173,8 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
 
 
 def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None,
-                                 per_file_timeout: int = None, per_file_retries: int = None):
+                                 per_file_timeout: int = None, per_file_retries: int = None,
+                                 model: str = None):
     """Load per-ticker pickles under `out_base/*/*.pkl`, run prediction models using
     local data (no JQuants), and upsert the probabilities into RiseProbabilitySummary.
 
@@ -280,33 +284,96 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None,
                     X_train, X_test = X[:n_train], X[-n_test:]
                     y_train, y_test = y[:n_train], y[-n_test:]
 
+                    # model selection: if model is None or 'all', keep existing behaviour
+                    sel = None if (model is None or str(model).lower() in ('all','mixed')) else str(model).lower()
+
                     models = StockModels()
-                    models.fit(X_train, y_train)
+                    # If caller requested a specific model, pass it explicitly to fit()
+                    models.fit(X_train, y_train, train_only=sel)
                     preds = models.predict_proba(X_test)
-                    # take last prediction for each model
-                    probs = {
-                        'model1': float(preds['logistic'][-1]),
-                        'model2': float(preds['lightgbm'][-1]),
-                        'model3': float(preds['nn'][-1]),
-                        'model4': float(preds['ensemble'][-1]),
-                    }
+                    # Debug: print detailed preds content to help trace None/empty results
+                    # debug info about preds is logged via logger.debug elsewhere; avoid noisy prints
+
+                    # helper to extract last element safely
+                    def last_val(arr):
+                        try:
+                            return float(arr[-1])
+                        except Exception:
+                            return None
+
+                    if sel is None:
+                        # take last prediction for each model (backwards compatible)
+                        probs = {
+                            'model1': last_val(preds.get('logistic', [])),
+                            'model2': last_val(preds.get('lightgbm', [])),
+                            'model3': last_val(preds.get('nn', [])),
+                            'model4': last_val(preds.get('ensemble', [])),
+                        }
+                    else:
+                        # single-model mode: only include the requested model's probability
+                        if sel in ('lightgbm', 'lgbm', 'lgb'):
+                            # map to internal key 'model2'
+                            # if model training was skipped/failed, avoid storing neutral 0.5 and use NULL instead
+                            if hasattr(models, 'trained') and not models.trained.get('lgbm', False):
+                                probs = {'model2': None}
+                            else:
+                                probs = {'model2': last_val(preds.get('lightgbm', []))}
+                        elif sel in ('logistic', 'lr'):
+                            # map to internal key 'model1'
+                            if hasattr(models, 'trained') and not models.trained.get('lr', False):
+                                probs = {'model1': None}
+                            else:
+                                probs = {'model1': last_val(preds.get('logistic', []))}
+                        elif sel in ('nn', 'mlp', 'neural'):
+                            # map to internal key 'model3'
+                            if hasattr(models, 'trained') and not models.trained.get('mlp', False):
+                                probs = {'model3': None}
+                            else:
+                                probs = {'model3': last_val(preds.get('nn', []))}
+                        elif sel in ('ensemble',):
+                            probs = {'model4': last_val(preds.get('ensemble', []))}
+                        else:
+                            # unknown model specified -> fallback to all
+                            probs = {
+                                'model1': last_val(preds.get('logistic', [])),
+                                'model2': last_val(preds.get('lightgbm', [])),
+                                'model3': last_val(preds.get('nn', [])),
+                                'model4': last_val(preds.get('ensemble', [])),
+                            }
 
                     # compute AUC on the test set when possible
                     aucs = {}
                     try:
                         # ensure y_test has variation
                         if len(set(y_test)) > 1:
+                            # mapping for available preds
                             mapping = {
                                 'model1': 'logistic',
                                 'model2': 'lightgbm',
                                 'model3': 'nn',
                                 'model4': 'ensemble',
                             }
-                            for mkey, pred_key in mapping.items():
+
+                            # if in single-model mode, only compute AUC for that model
+                            if sel is None:
+                                targets = mapping.items()
+                            else:
+                                # determine which single metric to compute
+                                if sel in ('lightgbm','lgbm','lgb'):
+                                    targets = (('model2', 'lightgbm'),)
+                                elif sel in ('logistic','lr'):
+                                    targets = (('model1', 'logistic'),)
+                                elif sel in ('nn','mlp','neural'):
+                                    targets = (('model3', 'nn'),)
+                                elif sel == 'ensemble':
+                                    targets = (('model4', 'ensemble'),)
+                                else:
+                                    targets = mapping.items()
+
+                            import numpy as _np
+                            for mkey, pred_key in targets:
                                 try:
-                                    arr = preds[pred_key]
-                                    # if arr is 2D probabilities for classes, take positive class
-                                    import numpy as _np
+                                    arr = preds.get(pred_key, [])
                                     arr = _np.asarray(arr)
                                     if arr.ndim == 2 and arr.shape[1] > 1:
                                         prob_pos = arr[:, 1]
@@ -317,17 +384,59 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None,
                                     aucs[mkey] = None
                         else:
                             # not enough class variation to compute AUC
+                            if sel is None:
+                                for k in ('model1','model2','model3','model4'):
+                                    aucs[k] = None
+                            else:
+                                # single selected model -> set single auc key
+                                if sel in ('lightgbm','lgbm','lgb'):
+                                    aucs['model2'] = None
+                                elif sel in ('logistic','lr'):
+                                    aucs['model1'] = None
+                                elif sel in ('nn','mlp','neural'):
+                                    aucs['model3'] = None
+                                elif sel == 'ensemble':
+                                    aucs['model4'] = None
+                    except Exception:
+                        if sel is None:
                             for k in ('model1','model2','model3','model4'):
                                 aucs[k] = None
-                    except Exception:
-                        for k in ('model1','model2','model3','model4'):
-                            aucs[k] = None
+                        else:
+                            # best effort: put None for selected model
+                            if sel in ('lightgbm','lgbm','lgb'):
+                                aucs['model2'] = None
+                            elif sel in ('logistic','lr'):
+                                aucs['model1'] = None
+                            elif sel in ('nn','mlp','neural'):
+                                aucs['model3'] = None
+                            elif sel == 'ensemble':
+                                aucs['model4'] = None
 
-                    # attach AUCs to probs dict with keys 'auc_model1'..
+                    # attach AUCs to probs dict with keys 'auc_model1'.. (only for keys present)
+                    # If single-model mode and the model wasn't actually trained, ensure its AUC is None
+                    if sel is not None and hasattr(models, 'trained'):
+                        if sel in ('lightgbm','lgbm','lgb'):
+                            aucs['model2'] = None if not models.trained.get('lgbm', False) else aucs.get('model2')
+                        elif sel in ('logistic','lr'):
+                            aucs['model1'] = None if not models.trained.get('lr', False) else aucs.get('model1')
+                        elif sel in ('nn','mlp','neural'):
+                            aucs['model3'] = None if not models.trained.get('mlp', False) else aucs.get('model3')
+                        elif sel == 'ensemble':
+                            # ensemble depends on components; if lgbm skipped, ensemble may be invalid
+                            if not (models.trained.get('lr', False) and models.trained.get('mlp', False) and models.trained.get('lgbm', False)):
+                                aucs['model4'] = None
+
                     for k, v in aucs.items():
                         probs[f'auc_{k}'] = v
 
-                    ok, res = update_or_create_rise_probs(code, probs)
+                    # If a single model was selected (sel != None), clear other model columns to NULL
+                    set_null = False if sel is None else True
+                    # Debug: log the probs dict and set_null to ensure keys match DB expectations
+                    try:
+                        logger.debug('update_rankings_from_pickles: code=%s set_null=%s probs=%s', code, set_null, probs)
+                    except Exception:
+                        pass
+                    ok, res = update_or_create_rise_probs(code, probs, set_null_for_missing=set_null)
                     if ok:
                         processed += 1
                         details.append((code, True, 'ok'))

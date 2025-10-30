@@ -79,7 +79,7 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
             raise
 
 
-def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
+def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None, model: str = 'lightgbm'):
     """Load per-ticker pickles under `out_base/*/*.pkl`, run prediction models using
     local data (no JQuants), and upsert the probabilities into RiseProbabilitySummary.
 
@@ -102,6 +102,9 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
             args += ['--data-dir', out_base]
         if max_items:
             args += ['--max-items', str(max_items)]
+        if model:
+            # allow callers to pass model selection; admin UI should default to 'lightgbm'
+            args += ['--model', str(model)]
 
         # Detach: don't wait for completion and discard output (container logs will still catch prints if needed)
         try:
@@ -118,7 +121,7 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
     except Exception as e:
         # fallback to synchronous execution on unexpected error
         try:
-            return admin_utils.update_rankings_from_pickles(out_base=out_base, max_items=max_items)
+            return admin_utils.update_rankings_from_pickles(out_base=out_base, max_items=max_items, model=model)
         except Exception:
             raise e
 

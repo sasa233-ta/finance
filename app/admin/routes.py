@@ -135,7 +135,9 @@ def update_rankings():
         max_items = request.form.get('max_items', type=int)
     except Exception:
         max_items = None
-    res = update_rankings_from_pickles(out_base='data', max_items=max_items)
+    # model selection from form; default to lightgbm for admin UI
+    model = request.form.get('model') or 'lightgbm'
+    res = update_rankings_from_pickles(out_base='data', max_items=max_items, model=model)
     # If the service returned a queued marker, inform the user the job is running in background
     if isinstance(res, dict) and res.get('queued'):
         flash('ランキング更新をバックグラウンドで開始しました。完了後ログを確認してください。', 'info')

@@ -93,6 +93,7 @@ def make_features(df: pd.DataFrame) -> pd.DataFrame:
 
 # --- model_service.py ---
 import numpy as np
+import logging
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 import lightgbm as lgb
@@ -109,8 +110,10 @@ class StockModels:
         self.max_samples = 1500  # これ以上の行は末尾を採用してトレーニングデータを制限する
         self.lgb_rounds = 50
         self.lgb_early_stopping = 10
+        # logger for this module
+        self.logger = logging.getLogger(__name__)
 
-    def fit(self, X_train, y_train):
+    def fit(self, X_train, y_train, train_only: str = None):
         # データ量が大きい場合は末尾 N サンプルに制限する（直近のデータを利用するため）
         if X_train.shape[0] > self.max_samples:
             start_idx = X_train.shape[0] - self.max_samples
@@ -121,23 +124,29 @@ class StockModels:
         try:
             self.scaler.fit(X_train)
             X_train_std = self.scaler.transform(X_train)
-        except Exception as e:
-            print('Scaler fit/transform failed:', e)
+        except Exception:
+            self.logger.exception('Scaler fit/transform failed')
             # フォールバックして元データを使う
             X_train_std = X_train
+        # Flags for which models were actually trained
+        self.trained = {'lr': False, 'mlp': False, 'lgbm': False}
 
         # ロジスティック回帰（標準化データで学習）
-        try:
-            self.lr.fit(X_train_std, y_train)
-        except Exception as e:
-            print('LogisticRegression fit failed:', e)
+        if train_only is None or str(train_only).lower() in ('all', 'logistic', 'lr'):
+            try:
+                self.lr.fit(X_train_std, y_train)
+                self.trained['lr'] = True
+            except Exception:
+                self.logger.exception('LogisticRegression fit failed')
 
         # MLP 学習（早期停止有効）
-        try:
-            self.mlp.fit(X_train_std, y_train)
-        except Exception as e:
-            # 学習失敗しても続行できるようログ出力のみ
-            print('MLP fit failed:', e)
+        if train_only is None or str(train_only).lower() in ('all', 'nn', 'mlp', 'neural'):
+            try:
+                self.mlp.fit(X_train_std, y_train)
+                self.trained['mlp'] = True
+            except Exception:
+                # 学習失敗しても続行できるようログ出力のみ
+                self.logger.exception('MLP fit failed')
 
         # LightGBM は検証データを作って早期停止をかける
         # 小さい割合を validation に割り当てる
@@ -163,26 +172,44 @@ class StockModels:
         # 2) early_stopping_rounds kwarg (some versions)
         # 3) no early stopping
         self.lgbm = None
-        if hasattr(lgb, 'early_stopping') and self.lgb_early_stopping and self.lgb_early_stopping > 0:
+        # LightGBM の学習は個別扱い。train_only が指定されている場合は
+        # 指定が 'lightgbm' または 'all' のときのみ実行される。
+        do_lgb = (train_only is None) or (str(train_only).lower() in ('all', 'lightgbm', 'lgbm', 'lgb'))
+        if not do_lgb:
+            # skip LightGBM training and leave lgbm as None
             try:
-                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], callbacks=[lgb.early_stopping(self.lgb_early_stopping)])
-            except Exception as e_cb:
-                print('LightGBM training with callbacks failed:', e_cb)
+                # mark lgbm as not trained
+                self.trained['lgbm'] = False
+            except Exception:
+                pass
+        else:
+            if hasattr(lgb, 'early_stopping') and self.lgb_early_stopping and self.lgb_early_stopping > 0:
+                try:
+                    self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], callbacks=[lgb.early_stopping(self.lgb_early_stopping)])
+                    # mark as trained when training completes without exception
+                    if self.lgbm is not None:
+                        self.trained['lgbm'] = True
+                except Exception:
+                    self.logger.exception('LightGBM training with callbacks failed')
 
-        # If callbacks attempt failed or wasn't used, try early_stopping_rounds kwarg
-        if self.lgbm is None and self.lgb_early_stopping and self.lgb_early_stopping > 0:
-            try:
-                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], early_stopping_rounds=self.lgb_early_stopping)
-            except Exception as e_es:
-                print('LightGBM training with early_stopping_rounds failed:', e_es)
+            # If callbacks attempt failed or wasn't used, try early_stopping_rounds kwarg
+            if self.lgbm is None and self.lgb_early_stopping and self.lgb_early_stopping > 0:
+                try:
+                    self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val], early_stopping_rounds=self.lgb_early_stopping)
+                    if self.lgbm is not None:
+                        self.trained['lgbm'] = True
+                except Exception:
+                    self.logger.exception('LightGBM training with early_stopping_rounds failed')
 
-        # Finally, try without early stopping
-        if self.lgbm is None:
-            try:
-                self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val])
-            except Exception as e_final:
-                print('LightGBM training failed (no early stopping):', e_final)
-                self.lgbm = None
+            # Finally, try without early stopping
+            if self.lgbm is None:
+                try:
+                    self.lgbm = lgb.train(params, lgb_train, num_boost_round=self.lgb_rounds, valid_sets=[lgb_val])
+                    if self.lgbm is not None:
+                        self.trained['lgbm'] = True
+                except Exception:
+                    self.logger.exception('LightGBM training failed (no early stopping)')
+                    self.lgbm = None
 
         return self
 
@@ -210,38 +237,49 @@ class StockModels:
 
     def predict_proba(self, X_test):
         # --- デバッグ: 入力・モデル状態確認 ---
-        print('predict_proba: X_test shape:', X_test.shape)
+        self.logger.debug('predict_proba: X_test shape: %s', getattr(X_test, 'shape', None))
+
         # 標準化した入力をロジスティックとMLPの両方で使う
         try:
             X_test_std = self.scaler.transform(X_test)
-        except Exception as e:
-            print('Scaler transform failed for X_test:', e)
+        except Exception:
+            self.logger.exception('Scaler transform failed for X_test')
             X_test_std = X_test
 
+        # ロジスティック: 未学習の場合は中立値を返す
         try:
-            lr_pred = self.lr.predict_proba(X_test_std)[:, 1]
-        except Exception as e:
-            print('LogisticRegression予測エラー:', e)
-            raise
+            if not getattr(self, 'trained', {}).get('lr', False):
+                lr_pred = np.full(getattr(X_test, 'shape', (0,))[0], 0.5)
+            else:
+                lr_pred = self.lr.predict_proba(X_test_std)[:, 1]
+        except Exception:
+            self.logger.exception('LogisticRegression predict_proba failed')
+            lr_pred = np.full(getattr(X_test, 'shape', (0,))[0], 0.5)
 
+        # MLP
         try:
-            mlp_pred = self.mlp.predict_proba(X_test_std)[:, 1]
-        except Exception as e:
-            print('MLPClassifier予測エラー:', e)
-            raise
+            if not getattr(self, 'trained', {}).get('mlp', False):
+                mlp_pred = np.full(getattr(X_test, 'shape', (0,))[0], 0.5)
+            else:
+                mlp_pred = self.mlp.predict_proba(X_test_std)[:, 1]
+        except Exception:
+            self.logger.exception('MLPClassifier predict_proba failed')
+            mlp_pred = np.full(getattr(X_test, 'shape', (0,))[0], 0.5)
+
+        # LightGBM
         try:
             # Check feature dimension matches scaler (if scaler was fitted)
             try:
                 expected_dim = self.scaler.mean_.shape[0]
-                if X_test.shape[1] != expected_dim:
-                    print(f"Warning: X_test feature dim ({X_test.shape[1]}) != expected ({expected_dim}).")
+                if getattr(X_test, 'shape', (None, None))[1] is not None and getattr(X_test, 'shape', (None, None))[1] != expected_dim:
+                    self.logger.warning('Warning: X_test feature dim (%s) != expected (%s).', getattr(X_test, 'shape', (None, None))[1], expected_dim)
             except Exception:
                 # scaler may not be fitted in some failure modes; ignore
                 pass
 
-            if self.lgbm is None:
-                # 学習に失敗している場合は中立的な確率を返す（0.5）
-                lgb_pred = np.full(X_test.shape[0], 0.5)
+            if self.lgbm is None or not getattr(self, 'trained', {}).get('lgbm', False):
+                # 学習に失敗している、もしくは学習がスキップされている場合は中立的な確率を返す（0.5）
+                lgb_pred = np.full(getattr(X_test, 'shape', (0,))[0], 0.5)
             else:
                 # LightGBM の predict ではベストイテレーションが存在すれば使う。
                 # バージョン差で属性名が異なる場合に備えフォールバックを行う。
@@ -255,9 +293,10 @@ class StockModels:
                     lgb_pred = self.lgbm.predict(X_test, num_iteration=int(num_iter))
                 else:
                     lgb_pred = self.lgbm.predict(X_test)
-        except Exception as e:
-            print('LightGBM予測エラー:', e)
+        except Exception:
+            self.logger.exception('LightGBM predict_proba failed')
             raise
+
         ensemble_pred = (lr_pred + lgb_pred + mlp_pred) / 3
         return {
             'logistic': lr_pred,

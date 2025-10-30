@@ -109,6 +109,13 @@
         <div class="mt-auto">
           <form method="post" action="/admin/update_rankings" class="d-flex align-items-center" style="gap:8px;">
             <input type="number" name="max_items" min="1" placeholder="テスト件数（省略で全件）" class="form-control form-control-sm" style="width:160px;" />
+            <select name="model" class="form-select form-select-sm" style="width:160px;">
+              <option value="lightgbm" selected>LightGBM (推奨)</option>
+              <option value="logistic">Logistic</option>
+              <option value="nn">Neural Network</option>
+              <option value="ensemble">Ensemble</option>
+              <option value="all">All (既存挙動)</option>
+            </select>
             <button type="submit" class="btn btn-primary">実行</button>
           </form>
         </div>

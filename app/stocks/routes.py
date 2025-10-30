@@ -52,8 +52,9 @@ def rankings():
     """sector17 ごとのランキング一覧。クエリパラメータ:
     - model: 'avg'（デフォルト）または 'prob_model1'..'prob_model4' のいずれかでソート
     """
-    # no pagination; default sort by model1 and limit to top 20
-    sort_model = request.args.get('model', 'prob_model1')
+    # no pagination; default sort fixed to LightGBM (prob_model2) and limit to top 20
+    # UI no longer exposes model selection — always use LightGBM for rankings
+    sort_model = 'prob_model2'
     limit = 20
 
     # allow sector passed as query param (form submit)
