@@ -25,18 +25,42 @@ def change_user_role(user_id, new_role):
 
 def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
                                  chunk_size: int = 50, pause: float = 1.5,
-                                 save_pkl: bool = True, save_csv: bool = False):
+                                 save_pkl: bool = True, save_csv: bool = False,
+                                 max_items: int = None):
     """Fetch Prime (domestic) listed stocks, group by 17-industry code and
     save per-ticker pickles under out_base/<sector17_code>/. Returns results dict.
     """
-    return admin_utils.fetch_prime_industry_pickles(
-        out_base=out_base,
-        years=years,
-        chunk_size=chunk_size,
-        pause=pause,
-        save_pkl=save_pkl,
-        save_csv=save_csv,
-    )
+    try:
+        # Launch the fetch job as a detached subprocess so the web worker isn't blocked.
+        import subprocess
+        import sys
+        import logging
+
+        script_path = os.path.join('scripts', 'fetch_prime_industry_pickles.py')
+        args = [sys.executable, script_path, '--data-dir', out_base, '--years', str(years), '--chunk-size', str(chunk_size), '--pause', str(pause)]
+        if not save_pkl:
+            args.append('--no-pkl')
+        if not save_csv:
+            args.append('--no-csv')
+        if max_items is not None:
+            args += ['--max-items', str(max_items)]
+
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return {'queued': True, 'message': 'background fetch job started'}
+    except Exception:
+        # fallback to synchronous call if subprocess cannot be started
+        try:
+            return admin_utils.fetch_prime_industry_pickles(
+                out_base=out_base,
+                years=years,
+                chunk_size=chunk_size,
+                pause=pause,
+                save_pkl=save_pkl,
+                save_csv=save_csv,
+                max_items=max_items,
+            )
+        except Exception:
+            raise
 
 
 def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):

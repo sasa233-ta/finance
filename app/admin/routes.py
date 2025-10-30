@@ -95,11 +95,32 @@ def update_stocks():
 @role_required('admin')
 def fetch_prime_pickles():
     # Parameters could be extended to accept chunk_size/pause via form if desired
-    res = fetch_prime_industry_pickles(out_base='data', years=5, chunk_size=50, pause=1.5)
+    try:
+        max_items = request.form.get('max_items', type=int)
+    except Exception:
+        max_items = None
+    res = fetch_prime_industry_pickles(out_base='data', years=5, chunk_size=50, pause=1.5, max_items=max_items)
+    # The service may return None (already run today), a dict mapping sector->filelist,
+    # or a queued marker {'queued': True, ...} when the job was started in background.
     if res is None:
         flash('本日すでに取得済みです（1日1回のみ）', 'info')
+    elif isinstance(res, dict) and res.get('queued'):
+        # Background job was started by the service layer
+        flash('データ取得をバックグラウンドで開始しました。完了後ログを確認してください。', 'info')
     else:
-        total = sum(len(v) for v in res.values())
+        # Be defensive: some values might not be sequences; sum only lengths we can get.
+        total = 0
+        try:
+            if isinstance(res, dict):
+                for v in res.values():
+                    try:
+                        total += len(v)
+                    except Exception:
+                        # skip non-sequence values
+                        continue
+        except Exception:
+            total = 0
+
         flash(f'プライム内国株式のデータを取得・保存しました（ファイル数: {total}）', 'success')
     return redirect(url_for('admin.admin_page'))
 

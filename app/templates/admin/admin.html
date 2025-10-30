@@ -89,7 +89,8 @@
   <p class="mb-2"><small class="text-muted">最終取得: まだ取得されていません</small></p>
   {% endif %}
         <div class="mt-auto">
-          <form method="post" action="/admin/fetch_prime_pickles" style="display:inline;">
+          <form method="post" action="/admin/fetch_prime_pickles" class="d-flex align-items-center" style="gap:8px;">
+            <input type="number" name="max_items" min="1" placeholder="テスト件数（省略で全件）" class="form-control form-control-sm" style="width:160px;" />
             <button type="submit" class="btn btn-success">取得</button>
           </form>
         </div>
