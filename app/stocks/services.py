@@ -16,7 +16,31 @@ import pandas as pd
 import requests
 from datetime import datetime
 from app.auth.models import db
-from app.stocks.models import Stock
+from app.stocks.models import Stock, RiseProbabilitySummary
+
+def get_rankings(sector: str = None, model: str = 'prob_model1', limit: int = 20):
+    """Return top `limit` stocks joined with RiseProbabilitySummary for given sector (sector17 or sector17_code).
+
+    Returns list of tuples: (Stock, RiseProbabilitySummary)
+    """
+    # validate model
+    if model not in ('prob_model1', 'prob_model2', 'prob_model3', 'prob_model4'):
+        model = 'prob_model1'
+
+    q = db.session.query(Stock, RiseProbabilitySummary).join(
+        RiseProbabilitySummary, RiseProbabilitySummary.stock_code == Stock.code
+    )
+    if sector:
+        q = q.filter((Stock.sector17 == sector) | (Stock.sector17_code == sector))
+
+    # order by selected model descending
+    order_col = getattr(RiseProbabilitySummary, model)
+    q = q.order_by(order_col.desc())
+
+    if limit:
+        q = q.limit(limit)
+
+    return q.all()
 
 JPX_XLS_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data'))
@@ -88,3 +112,44 @@ def fetch_and_update_stocks():
     db.session.bulk_save_objects(stocks)
     db.session.commit()
     return len(stocks)
+
+
+def update_or_create_rise_probs(stock_code: str, probs: dict):
+    """Upsert rise probability summary for `stock_code`.
+
+    `probs` expected keys: 'model1','model2','model3','model4' (values convertible to float).
+    Returns (True, obj) on success, (False, message) on error.
+    """
+    stock = Stock.query.filter_by(code=stock_code).first()
+    if not stock:
+        return False, f'stock not found: {stock_code}'
+
+    try:
+        # manage by stock_code instead of numeric stock_id
+        row = RiseProbabilitySummary.query.filter_by(stock_code=stock.code).first()
+        if not row:
+            row = RiseProbabilitySummary(stock_code=stock.code)
+            db.session.add(row)
+
+        # set provided probabilities (ignore missing keys)
+        for key in ('model1', 'model2', 'model3', 'model4'):
+            val = probs.get(key)
+            if val is not None:
+                setattr(row, f'prob_{key}', float(val))
+
+        # set provided AUC scores if present
+        for key in ('model1', 'model2', 'model3', 'model4'):
+            auc_key = f'auc_{key}'
+            auc_val = probs.get(auc_key)
+            if auc_val is not None:
+                try:
+                    setattr(row, f'auc_{key}', float(auc_val))
+                except Exception:
+                    # ignore invalid auc values
+                    pass
+
+        db.session.commit()
+        return True, row
+    except Exception as e:
+        db.session.rollback()
+        return False, f'db error: {e}'

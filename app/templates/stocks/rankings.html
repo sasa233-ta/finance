@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-3">
+  <h2>Sector17 ランキング</h2>
+  <form method="get" class="form-inline mb-3">
+    <label class="mr-2">業種 (17):</label>
+    <select name="sector" class="form-control mr-2" onchange="this.form.submit()">
+      <option value="">-- 全て --</option>
+      {% for s in sectors %}
+        <option value="{{ s }}" {% if selected_sector == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <label class="mr-2">ソート:</label>
+    <select name="model" class="form-control mr-2" onchange="this.form.submit()">
+      <option value="prob_model1" {% if sort_model == 'prob_model1' %}selected{% endif %}>モデル1</option>
+      <option value="prob_model2" {% if sort_model == 'prob_model2' %}selected{% endif %}>モデル2</option>
+      <option value="prob_model3" {% if sort_model == 'prob_model3' %}selected{% endif %}>モデル3</option>
+      <option value="prob_model4" {% if sort_model == 'prob_model4' %}selected{% endif %}>モデル4</option>
+    </select>
+  </form>
+
+  {% if items and items|length > 0 %}
+  <table class="table table-sm table-striped">
+    <thead>
+      <tr>
+        <th>銘柄</th>
+        <th>上昇確率</th>
+        <th>AUCs</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pair in items %}
+        {% set stock = pair[0] %}
+        {% set rp = pair[1] %}
+      <tr>
+        <td><a href="{{ url_for('stocks.stock_detail', code=stock.code) }}">{% if '.' in stock.code %}【{{ stock.code }}】{% elif stock.market %}【{{ stock.code }}.{{ stock.market }}】{% else %}【{{ stock.code }}】{% endif %} {{ stock.name }}</a></td>
+        <td>
+          {% if rp %}
+            m1：{{ '%.3f'|format(rp.prob_model1) if rp.prob_model1 is not none else '-' }}<br>
+            m2：{{ '%.3f'|format(rp.prob_model2) if rp.prob_model2 is not none else '-' }}<br>
+            m3：{{ '%.3f'|format(rp.prob_model3) if rp.prob_model3 is not none else '-' }}<br>
+            m4：{{ '%.3f'|format(rp.prob_model4) if rp.prob_model4 is not none else '-' }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>
+          {% if rp %}
+            m1：{{ '%.3f'|format(rp.auc_model1) if rp.auc_model1 is not none else '-' }}<br>
+            m2：{{ '%.3f'|format(rp.auc_model2) if rp.auc_model2 is not none else '-' }}<br>
+            m3：{{ '%.3f'|format(rp.auc_model3) if rp.auc_model3 is not none else '-' }}<br>
+            m4：{{ '%.3f'|format(rp.auc_model4) if rp.auc_model4 is not none else '-' }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="alert alert-secondary" role="alert">該当する銘柄はありません。</div>
+  {% endif %}
+
+  <!-- no pagination; showing top results only -->
+</div>
+{% endblock %}

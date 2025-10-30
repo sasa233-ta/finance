@@ -6,7 +6,6 @@ venv\
 .env.*
 __pycache__/
 *.pyc
-migrations/
 instance/
 data/
 !data/.gitkeep
@@ -16,3 +15,4 @@ data/
 build/
 dist/
 *.log
+docs/

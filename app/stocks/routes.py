@@ -5,6 +5,9 @@ from . import stocks
 from app.auth.decorators import login_required
 from app.stocks.models import Stock
 from app.stocks.services import normalize_for_search
+from app.stocks.models import RiseProbabilitySummary
+from app.stocks.services import get_rankings
+from sqlalchemy import func
 
 @stocks.route('/')
 @login_required
@@ -40,3 +43,25 @@ def stock_detail(code):
     if stock:
         return render_template('stocks/stock_detail.html', stock=stock)
     return render_template('stocks/stock_detail.html', stock=None)
+
+
+
+@stocks.route('/rankings')
+@login_required
+def rankings():
+    """sector17 ごとのランキング一覧。クエリパラメータ:
+    - model: 'avg'（デフォルト）または 'prob_model1'..'prob_model4' のいずれかでソート
+    """
+    # no pagination; default sort by model1 and limit to top 20
+    sort_model = request.args.get('model', 'prob_model1')
+    limit = 20
+
+    # allow sector passed as query param (form submit)
+    sector = request.args.get('sector')
+
+    # sectors list for selector
+    sectors = [row[0] for row in Stock.query.with_entities(Stock.sector17).distinct().order_by(Stock.sector17)]
+
+    items = get_rankings(sector=sector, model=sort_model, limit=limit)
+
+    return render_template('stocks/rankings.html', items=items, sectors=sectors, selected_sector=sector, sort_model=sort_model)

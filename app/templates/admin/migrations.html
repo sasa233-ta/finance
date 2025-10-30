@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}マイグレーション管理{% endblock %}
+{% block content %}
+<h2>マイグレーション管理</h2>
+
+<div class="mb-3">
+  <p>現在のリビジョン: <strong>{{ current or '不明' }}</strong></p>
+  <p>Heads 情報:</p>
+  <pre style="white-space:pre-wrap; background:#f8f9fa; padding:10px; border-radius:4px;">{{ heads or '取得できませんでした' }}</pre>
+</div>
+
+<form method="post" action="{{ url_for('admin.migrations_upgrade') }}" onsubmit="return confirm('本当にマイグレーションを実行しますか？本番では事前にバックアップをとってください。');">
+  <button type="submit" class="btn btn-danger">マイグレーションを実行（flask db upgrade）</button>
+  <a href="{{ url_for('admin.admin_page') }}" class="btn btn-secondary ms-2">戻る</a>
+</form>
+
+<hr />
+
+<h4>ダウングレード（注意: 破壊的な場合があります）</h4>
+<form method="post" action="{{ url_for('admin.migrations_downgrade') }}" onsubmit="return confirm('ダウングレードはデータを失う可能性があります。本当に実行しますか？');">
+  <div class="mb-2">
+    <label for="target_revision" class="form-label">ターゲットリビジョンを選択</label>
+    <select name="target_revision" id="target_revision" class="form-select" style="max-width:420px;">
+      <option value="">-- 選択してください --</option>
+      {% for rev, name, fname in revisions %}
+        <option value="{{ rev }}">{{ rev }} — {{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-warning">ダウングレードを実行</button>
+</form>
+
+<hr />
+
+<h4>マイグレーション履歴</h4>
+<pre style="white-space:pre-wrap; background:#f8f9fa; padding:10px; border-radius:4px; max-height:400px; overflow:auto;">{{ history or '取得できませんでした' }}</pre>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, msg in messages %}
+      <div class="alert alert-{{ category }} mt-3">{{ msg }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{% endblock %}

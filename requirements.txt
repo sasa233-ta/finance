@@ -14,3 +14,8 @@ lightgbm
 pytest
 psycopg2-binary
 gunicorn
+Flask-Migrate
+alembic
+rq
+redis
+portalocker

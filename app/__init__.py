@@ -1,5 +1,9 @@
 
 from flask import Flask
+from flask_migrate import Migrate
+
+# Migrate instance (initialized per-app in create_app)
+migrate = Migrate()
 
 def create_app():
 
@@ -10,6 +14,9 @@ def create_app():
 	# Initialize extensions that require app
 	from .auth.models import db
 	db.init_app(app)
+
+	# initialize Flask-Migrate after db
+	migrate.init_app(app, db)
 
 	# Register Blueprints
 	from .auth import auth as auth_blueprint

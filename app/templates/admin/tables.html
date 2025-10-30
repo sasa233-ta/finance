@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}テーブル一覧{% endblock %}
+{% block content %}
+<h2>データベース テーブル一覧</h2>
+<table class="table table-sm">
+  <thead>
+    <tr>
+      <th>テーブル名</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tables %}
+    <tr>
+      <td>{{ t }}</td>
+      <td><a href="{{ url_for('admin.table_detail', table_name=t) }}" class="btn btn-sm btn-outline-primary">表示</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
