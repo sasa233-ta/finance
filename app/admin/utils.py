@@ -16,7 +16,8 @@ import traceback
 
 def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
                                  chunk_size: int = 50, pause: float = 1.5,
-                                 save_pkl: bool = True, save_csv: bool = False):
+                                 save_pkl: bool = True, save_csv: bool = False,
+                                 max_items: int = None):
     """Fetch Prime-listed domestic stocks, group by 17-industry code and
     save per-ticker pickles under out_base/<sector17_code>/.
 
@@ -71,10 +72,20 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
 
     # We'll process industry-by-industry so we can checkpoint progress per-sector
     results = {}
+    # track how many tickers we've attempted/saved to support --max-items
+    attempted = 0
     for sector, codes in industry_map.items():
         # determine which codes still need processing according to progress
         processed_codes = set(progress.get(sector, []))
         remaining = [c for c in codes if c not in processed_codes]
+        # apply max_items limit across all sectors (resume-aware)
+        if max_items is not None:
+            remaining_allowed = int(max_items) - attempted
+            if remaining_allowed <= 0:
+                # already reached limit; stop processing further sectors
+                continue
+            # slice remaining to the allowed count
+            remaining = remaining[:remaining_allowed]
         if not remaining:
             # nothing to do for this sector
             continue
@@ -91,6 +102,8 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
 
             # res is mapping sector -> list of saved file paths
             saved_files = res.get(sector, [])
+            # increment attempted by number of tickers requested in this sector
+            attempted += len(remaining)
             # extract tickers from saved file names and update progress
             saved_tickers = set()
             for path in saved_files:

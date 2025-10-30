@@ -5,11 +5,11 @@ from app import create_app
 from app.admin import utils as admin_utils
 
 
-def main(out_base: str = 'data', years: int = 5, chunk_size: int = 50, pause: float = 1.5, save_pkl: bool = True, save_csv: bool = False):
+def main(out_base: str = 'data', years: int = 5, chunk_size: int = 50, pause: float = 1.5, save_pkl: bool = True, save_csv: bool = False, max_items: int = None):
     app = create_app()
     with app.app_context():
         try:
-            res = admin_utils.fetch_prime_industry_pickles(out_base=out_base, years=years, chunk_size=chunk_size, pause=pause, save_pkl=save_pkl, save_csv=save_csv)
+            res = admin_utils.fetch_prime_industry_pickles(out_base=out_base, years=years, chunk_size=chunk_size, pause=pause, save_pkl=save_pkl, save_csv=save_csv, max_items=max_items)
             print('fetch_prime_industry_pickles result:', res)
         except Exception:
             logging.exception('fetch_prime_industry_pickles failed')

@@ -5,6 +5,7 @@ from sqlalchemy.exc import NoSuchTableError
 import subprocess
 import shlex
 import os
+import uuid
 import re
 
 def search_users(query):
@@ -36,8 +37,9 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
         import sys
         import logging
 
-        script_path = os.path.join('scripts', 'fetch_prime_industry_pickles.py')
-        args = [sys.executable, script_path, '--data-dir', out_base, '--years', str(years), '--chunk-size', str(chunk_size), '--pause', str(pause)]
+        # Use module invocation so package imports (app, scripts) resolve when running in container
+        module_name = 'scripts.fetch_prime_industry_pickles'
+        args = [sys.executable, '-m', module_name, '--data-dir', out_base, '--years', str(years), '--chunk-size', str(chunk_size), '--pause', str(pause)]
         if not save_pkl:
             args.append('--no-pkl')
         if not save_csv:
@@ -45,8 +47,22 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
         if max_items is not None:
             args += ['--max-items', str(max_items)]
 
-        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
-        return {'queued': True, 'message': 'background fetch job started'}
+        # Redirect background job output to a logfile under out_base for later inspection.
+        try:
+            # write logs under the application's instance directory so they are persisted
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..'))
+            log_dir = os.path.join(base_dir, 'instance')
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, f'fetch_prime_industry_pickles.{uuid.uuid4().hex}.log')
+            lf = open(log_path, 'a')
+            # Only record stderr (errors). Discard normal stdout to avoid noisy logs.
+            # start_new_session detaches the process from the current group so it won't be killed with gunicorn worker
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=lf, close_fds=True, cwd='/', env=os.environ.copy(), start_new_session=True)
+            return {'queued': True, 'message': 'background fetch job started', 'log': log_path}
+        except Exception:
+            # fallback to original behavior (no-logging) on unexpected errors
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+            return {'queued': True, 'message': 'background fetch job started'}
     except Exception:
         # fallback to synchronous call if subprocess cannot be started
         try:
@@ -79,16 +95,26 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
         import sys
         import logging
 
-        script_path = os.path.join('scripts', 'update_rise_probability.py')
-        args = [sys.executable, script_path]
+        # run as module so imports resolve correctly inside container
+        module_name = 'scripts.update_rise_probability'
+        args = [sys.executable, '-m', module_name]
         if out_base:
             args += ['--data-dir', out_base]
         if max_items:
             args += ['--max-items', str(max_items)]
 
         # Detach: don't wait for completion and discard output (container logs will still catch prints if needed)
-        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
-        return {'queued': True, 'message': 'background job started'}
+        try:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..'))
+            log_dir = os.path.join(base_dir, 'instance')
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, f'update_rankings.{uuid.uuid4().hex}.log')
+            lf = open(log_path, 'a')
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=lf, close_fds=True, cwd='/', env=os.environ.copy(), start_new_session=True)
+            return {'queued': True, 'message': 'background job started', 'log': log_path}
+        except Exception:
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+            return {'queued': True, 'message': 'background job started'}
     except Exception as e:
         # fallback to synchronous execution on unexpected error
         try:
