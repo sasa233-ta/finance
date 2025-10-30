@@ -26,5 +26,6 @@ services:
       - ./app:/app
       - ./data:/data
       - ./migrations:/migrations
+      - ./instance:/instance
 volumes:
   db-data:

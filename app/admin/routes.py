@@ -114,25 +114,35 @@ def update_rankings():
         max_items = request.form.get('max_items', type=int)
     except Exception:
         max_items = None
-    processed, failed, details = update_rankings_from_pickles(out_base='data', max_items=max_items)
-    if processed == 0 and failed == 0:
-        flash('ピックルファイルが見つかりませんでした。まずはデータ取得を実行してください。', 'info')
+    res = update_rankings_from_pickles(out_base='data', max_items=max_items)
+    # If the service returned a queued marker, inform the user the job is running in background
+    if isinstance(res, dict) and res.get('queued'):
+        flash('ランキング更新をバックグラウンドで開始しました。完了後ログを確認してください。', 'info')
     else:
-        note = ''
-        if max_items:
-            note = f' (テスト件数上限: {max_items})'
-        flash(f'ランキング更新: 成功 {processed} 件, 失敗 {failed} 件{note}', 'success' if failed == 0 else 'warning')
-        # If there are failures, include a short summary of error messages for debugging
-        if failed:
-            err_messages = []
-            for code, ok, msg in details:
-                if not ok:
-                    # keep messages short
-                    s = f"{code}: {str(msg)[:200]}"
-                    err_messages.append(s)
-            if err_messages:
-                # show up to 10 failing items
-                flash('失敗詳細: ' + '; '.join(err_messages[:10]), 'danger')
+        try:
+            processed, failed, details = res
+        except Exception:
+            processed = failed = 0
+            details = []
+
+        if processed == 0 and failed == 0:
+            flash('ピックルファイルが見つかりませんでした。まずはデータ取得を実行してください。', 'info')
+        else:
+            note = ''
+            if max_items:
+                note = f' (テスト件数上限: {max_items})'
+            flash(f'ランキング更新: 成功 {processed} 件, 失敗 {failed} 件{note}', 'success' if failed == 0 else 'warning')
+            # If there are failures, include a short summary of error messages for debugging
+            if failed:
+                err_messages = []
+                for code, ok, msg in details:
+                    if not ok:
+                        # keep messages short
+                        s = f"{code}: {str(msg)[:200]}"
+                        err_messages.append(s)
+                if err_messages:
+                    # show up to 10 failing items
+                    flash('失敗詳細: ' + '; '.join(err_messages[:10]), 'danger')
     return redirect(url_for('admin.admin_page'))
 
 

@@ -46,7 +46,31 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
     Returns a tuple (processed_count, failed_count, details_list)
     where details_list contains (code, ok, message) entries.
     """
-    return admin_utils.update_rankings_from_pickles(out_base=out_base, max_items=max_items)
+    # Short-term: run asynchronously in a background thread to avoid blocking the web request.
+    # The actual heavy work is implemented in admin_utils.update_rankings_from_pickles.
+    try:
+        # Spawn a separate process to run the batch job so the web worker
+        # process is not impacted by heavy CPU / long-running work.
+        import subprocess
+        import sys
+        import logging
+
+        script_path = os.path.join('scripts', 'update_rise_probability.py')
+        args = [sys.executable, script_path]
+        if out_base:
+            args += ['--data-dir', out_base]
+        if max_items:
+            args += ['--max-items', str(max_items)]
+
+        # Detach: don't wait for completion and discard output (container logs will still catch prints if needed)
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        return {'queued': True, 'message': 'background job started'}
+    except Exception as e:
+        # fallback to synchronous execution on unexpected error
+        try:
+            return admin_utils.update_rankings_from_pickles(out_base=out_base, max_items=max_items)
+        except Exception:
+            raise e
 
 
 def list_tables():

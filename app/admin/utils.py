@@ -7,6 +7,11 @@ import os
 from datetime import date as _date
 import pandas as pd
 import re
+import subprocess
+import json
+import uuid
+import time
+import traceback
 
 
 def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
@@ -70,7 +75,8 @@ def fetch_prime_industry_pickles(out_base: str = 'data', years: int = 5,
     return results
 
 
-def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
+def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None,
+                                 per_file_timeout: int = None, per_file_retries: int = None):
     """Load per-ticker pickles under `out_base/*/*.pkl`, run prediction models using
     local data (no JQuants), and upsert the probabilities into RiseProbabilitySummary.
 
@@ -103,7 +109,8 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
         # walk inside this subdirectory only
         for root, dirs, files in os.walk(subpath):
             for fname in files:
-                if not fname.endswith('.pkl'):
+                # accept .pkl and .pickle extensions
+                if not (fname.endswith('.pkl') or fname.endswith('.pickle')):
                     continue
                 p = os.path.join(root, fname)
                 code = os.path.splitext(fname)[0]
@@ -159,6 +166,9 @@ def update_rankings_from_pickles(out_base: str = 'data', max_items: int = None):
                         if not inferred:
                             raise RuntimeError("missing 'Date' or 'date' column and no date-like index/column found")
 
+                    # Note: per_file_timeout / per_file_retries are accepted for
+                    # API compatibility with scripts/update_rise_probability.py.
+                    # Current implementation processes files synchronously in this loop.
                     df_feat = make_features(df)
                     # prepare features similar to predict_stock
                     all_columns = list(df_feat.columns)

@@ -18,6 +18,30 @@ from datetime import datetime
 from app.auth.models import db
 from app.stocks.models import Stock, RiseProbabilitySummary
 
+def get_rankings(sector: str = None, model: str = 'prob_model1', limit: int = 20):
+    """Return top `limit` stocks joined with RiseProbabilitySummary for given sector (sector17 or sector17_code).
+
+    Returns list of tuples: (Stock, RiseProbabilitySummary)
+    """
+    # validate model
+    if model not in ('prob_model1', 'prob_model2', 'prob_model3', 'prob_model4'):
+        model = 'prob_model1'
+
+    q = db.session.query(Stock, RiseProbabilitySummary).join(
+        RiseProbabilitySummary, RiseProbabilitySummary.stock_code == Stock.code
+    )
+    if sector:
+        q = q.filter((Stock.sector17 == sector) | (Stock.sector17_code == sector))
+
+    # order by selected model descending
+    order_col = getattr(RiseProbabilitySummary, model)
+    q = q.order_by(order_col.desc())
+
+    if limit:
+        q = q.limit(limit)
+
+    return q.all()
+
 JPX_XLS_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data'))
 XLS_PATH = os.path.join(DATA_DIR, 'jpx_listed_companies.xls')

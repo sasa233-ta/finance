@@ -18,3 +18,4 @@ Flask-Migrate
 alembic
 rq
 redis
+portalocker

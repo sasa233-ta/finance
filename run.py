@@ -5,7 +5,6 @@ from app.stocks.models import Stock
 from app.auth.utils import hash_password
 import os
 
-
 app = create_app()
 
 # create_app() initializes extensions (db.init_app) so don't call it again here

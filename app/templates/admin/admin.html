@@ -106,7 +106,8 @@
         </div>
         <p class="card-text text-muted">登録済みの時系列データを使ってランキング（上昇確率）を生成します。</p>
         <div class="mt-auto">
-          <form method="post" action="/admin/update_rankings" style="display:inline;">
+          <form method="post" action="/admin/update_rankings" class="d-flex align-items-center" style="gap:8px;">
+            <input type="number" name="max_items" min="1" placeholder="テスト件数（省略で全件）" class="form-control form-control-sm" style="width:160px;" />
             <button type="submit" class="btn btn-primary">実行</button>
           </form>
         </div>
